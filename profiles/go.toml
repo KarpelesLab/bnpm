@@ -30,6 +30,9 @@ target = "~/.cache/go-build"
 mode = "rw"
 create = true
 
+[profile.resources]
+max_memory = "4G"
+
 [profile.env]
 pass = ["HOME", "USER", "PATH", "TERM", "GOPATH", "GOMODCACHE", "GOPROXY", "GONOSUMCHECK", "GOFLAGS", "LANG"]
 
@@ -53,6 +56,9 @@ source = "~/.cache/go-build"
 target = "~/.cache/go-build"
 mode = "rw"
 create = true
+
+[profile.resources]
+max_memory = "8G"
 
 [profile.env]
 pass = ["HOME", "USER", "PATH", "TERM", "GOPATH", "GOMODCACHE", "GOPROXY", "GOFLAGS", "CGO_ENABLED", "CC", "CXX", "LANG"]

@@ -29,6 +29,9 @@ target = "~/.npmrc"
 mode = "ro"
 optional = true
 
+[profile.resources]
+max_memory = "4G"
+
 [profile.env]
 pass = ["HOME", "USER", "PATH", "TERM", "NODE_ENV", "NPM_CONFIG_REGISTRY", "LANG"]
 
@@ -50,6 +53,9 @@ source = "~/.npm"
 target = "~/.npm"
 mode = "ro"
 
+[profile.resources]
+max_memory = "8G"
+
 [profile.env]
 pass = ["HOME", "USER", "PATH", "TERM", "NODE_ENV", "CI", "LANG"]
 
@@ -69,6 +75,9 @@ allowed_domains = [
     "*.npmjs.org",
 ]
 allowed_ports = [80, 443]
+
+[profile.resources]
+max_memory = "4G"
 
 [[profile.filesystem.bind]]
 source = "~/.cache/yarn"
@@ -92,6 +101,9 @@ args = ["^run$", "^test$", "^start$", "^build$"]
 [profile.network]
 mode = "none"
 
+[profile.resources]
+max_memory = "8G"
+
 [[profile]]
 name = "pnpm-install"
 
@@ -107,6 +119,9 @@ allowed_domains = [
     "*.npmjs.org",
 ]
 allowed_ports = [80, 443]
+
+[profile.resources]
+max_memory = "4G"
 
 [[profile.filesystem.bind]]
 source = "~/.local/share/pnpm"
@@ -129,6 +144,9 @@ args = ["^run$", "^test$", "^start$", "^build$", "^exec$"]
 
 [profile.network]
 mode = "none"
+
+[profile.resources]
+max_memory = "8G"
 
 [[profile.filesystem.bind]]
 source = "~/.local/share/pnpm/store"

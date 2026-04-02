@@ -88,6 +88,18 @@ func runChild() {
 		fatal("command not found in sandbox: %s", cp.Command)
 	}
 
+	// Apply resource limits
+	if cp.Profile.Resources.MaxMemory != "" {
+		memBytes, err := parseSize(cp.Profile.Resources.MaxMemory)
+		if err != nil {
+			fatal("invalid max_memory %q: %v", cp.Profile.Resources.MaxMemory, err)
+		}
+		lim := &unix.Rlimit{Cur: memBytes, Max: memBytes}
+		if err := unix.Setrlimit(unix.RLIMIT_AS, lim); err != nil {
+			fatal("setrlimit RLIMIT_AS: %v", err)
+		}
+	}
+
 	// Replace this process with the target command
 	args := append([]string{filepath.Base(cp.Command)}, cp.Args...)
 	if err := unix.Exec(binary, args, env); err != nil {
@@ -129,6 +141,36 @@ func bringUpLoopback() {
 	flags |= unix.IFF_UP
 	ifreq.SetUint16(flags)
 	unix.IoctlIfreq(sock, unix.SIOCSIFFLAGS, ifreq)
+}
+
+// parseSize parses a human-readable size string like "512M", "4G", "1T" into bytes.
+func parseSize(s string) (uint64, error) {
+	if len(s) == 0 {
+		return 0, fmt.Errorf("empty size")
+	}
+	multiplier := uint64(1)
+	suffix := s[len(s)-1]
+	switch suffix {
+	case 'k', 'K':
+		multiplier = 1024
+		s = s[:len(s)-1]
+	case 'm', 'M':
+		multiplier = 1024 * 1024
+		s = s[:len(s)-1]
+	case 'g', 'G':
+		multiplier = 1024 * 1024 * 1024
+		s = s[:len(s)-1]
+	case 't', 'T':
+		multiplier = 1024 * 1024 * 1024 * 1024
+		s = s[:len(s)-1]
+	}
+	n, err := fmt.Sscanf(s, "%d", new(uint64))
+	if n != 1 || err != nil {
+		return 0, fmt.Errorf("invalid size: %s", s)
+	}
+	var val uint64
+	fmt.Sscanf(s, "%d", &val)
+	return val * multiplier, nil
 }
 
 func fatal(format string, args ...any) {
