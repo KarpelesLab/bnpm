@@ -1,0 +1,136 @@
+[[profile]]
+name = "npm-install"
+
+[[profile.match]]
+command = "npm"
+args = ["^install$", "^i$", "^ci$", "^add$", "^update$", "^uninstall$", "^remove$"]
+
+[profile.network]
+mode = "filtered"
+allowed_domains = [
+    "registry.npmjs.org",
+    "*.npmjs.org",
+    "registry.yarnpkg.com",
+    "*.githubusercontent.com",
+    "github.com",
+    "*.github.com",
+]
+allowed_ports = [80, 443]
+
+[[profile.filesystem.bind]]
+source = "~/.npm"
+target = "~/.npm"
+mode = "rw"
+create = true
+
+[[profile.filesystem.bind]]
+source = "~/.npmrc"
+target = "~/.npmrc"
+mode = "ro"
+optional = true
+
+[profile.env]
+pass = ["HOME", "USER", "PATH", "TERM", "NODE_ENV", "NPM_CONFIG_REGISTRY", "LANG"]
+
+[[profile]]
+name = "npm-scripts"
+
+[[profile.match]]
+command = "npm"
+args = ["^run$", "^test$", "^start$", "^build$", "^exec$"]
+
+[[profile.match]]
+command = "npx"
+
+[profile.network]
+mode = "none"
+
+[[profile.filesystem.bind]]
+source = "~/.npm"
+target = "~/.npm"
+mode = "ro"
+
+[profile.env]
+pass = ["HOME", "USER", "PATH", "TERM", "NODE_ENV", "CI", "LANG"]
+
+[[profile]]
+name = "yarn-install"
+
+[[profile.match]]
+command = "yarn"
+args = ["^$", "^install$", "^add$", "^remove$"]
+
+[profile.network]
+mode = "filtered"
+allowed_domains = [
+    "registry.yarnpkg.com",
+    "registry.npmjs.org",
+    "*.yarnpkg.com",
+    "*.npmjs.org",
+]
+allowed_ports = [80, 443]
+
+[[profile.filesystem.bind]]
+source = "~/.cache/yarn"
+target = "~/.cache/yarn"
+mode = "rw"
+create = true
+
+[[profile.filesystem.bind]]
+source = "~/.yarnrc"
+target = "~/.yarnrc"
+mode = "ro"
+optional = true
+
+[[profile]]
+name = "yarn-scripts"
+
+[[profile.match]]
+command = "yarn"
+args = ["^run$", "^test$", "^start$", "^build$"]
+
+[profile.network]
+mode = "none"
+
+[[profile]]
+name = "pnpm-install"
+
+[[profile.match]]
+command = "pnpm"
+args = ["^install$", "^i$", "^add$", "^update$", "^remove$"]
+
+[profile.network]
+mode = "filtered"
+allowed_domains = [
+    "registry.npmjs.org",
+    "registry.yarnpkg.com",
+    "*.npmjs.org",
+]
+allowed_ports = [80, 443]
+
+[[profile.filesystem.bind]]
+source = "~/.local/share/pnpm"
+target = "~/.local/share/pnpm"
+mode = "rw"
+create = true
+
+[[profile.filesystem.bind]]
+source = "~/.local/share/pnpm/store"
+target = "~/.local/share/pnpm/store"
+mode = "rw"
+create = true
+
+[[profile]]
+name = "pnpm-scripts"
+
+[[profile.match]]
+command = "pnpm"
+args = ["^run$", "^test$", "^start$", "^build$", "^exec$"]
+
+[profile.network]
+mode = "none"
+
+[[profile.filesystem.bind]]
+source = "~/.local/share/pnpm/store"
+target = "~/.local/share/pnpm/store"
+mode = "ro"

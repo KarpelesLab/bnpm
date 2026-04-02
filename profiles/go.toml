@@ -1,0 +1,58 @@
+[[profile]]
+name = "go-mod"
+
+[[profile.match]]
+command = "go"
+args = ["^mod$", "^get$"]
+
+[profile.network]
+mode = "filtered"
+allowed_domains = [
+    "proxy.golang.org",
+    "sum.golang.org",
+    "*.golang.org",
+    "github.com",
+    "*.github.com",
+    "*.googlesource.com",
+    "*.googleapis.com",
+]
+allowed_ports = [80, 443]
+
+[[profile.filesystem.bind]]
+source = "~/go/pkg/mod"
+target = "~/go/pkg/mod"
+mode = "rw"
+create = true
+
+[[profile.filesystem.bind]]
+source = "~/.cache/go-build"
+target = "~/.cache/go-build"
+mode = "rw"
+create = true
+
+[profile.env]
+pass = ["HOME", "USER", "PATH", "TERM", "GOPATH", "GOMODCACHE", "GOPROXY", "GONOSUMCHECK", "GOFLAGS", "LANG"]
+
+[[profile]]
+name = "go-build"
+
+[[profile.match]]
+command = "go"
+args = ["^build$", "^test$", "^vet$", "^generate$", "^install$", "^run$"]
+
+[profile.network]
+mode = "none"
+
+[[profile.filesystem.bind]]
+source = "~/go/pkg/mod"
+target = "~/go/pkg/mod"
+mode = "ro"
+
+[[profile.filesystem.bind]]
+source = "~/.cache/go-build"
+target = "~/.cache/go-build"
+mode = "rw"
+create = true
+
+[profile.env]
+pass = ["HOME", "USER", "PATH", "TERM", "GOPATH", "GOMODCACHE", "GOPROXY", "GOFLAGS", "CGO_ENABLED", "CC", "CXX", "LANG"]
