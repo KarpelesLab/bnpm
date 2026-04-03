@@ -12,17 +12,17 @@ import (
 )
 
 const (
-	tapName    = "tap0"
-	tapIP      = "10.0.2.100"
-	tapGateway = "10.0.2.1"
-	tapMask    = 24
-	tapMTU     = 1500
+	tunName    = "tun0"
+	tunIP      = "10.0.2.100"
+	tunGateway = "10.0.2.1"
+	tunMask    = 24
+	tunMTU     = 1500
 )
 
-// setupNetworkProxy receives the TAP fd from the child (via Unix socket)
+// setupNetworkProxy receives the TUN fd from the child (via Unix socket)
 // and starts the userspace network proxy. Returns a cleanup function.
 func setupNetworkProxy(parentSock *os.File, profile *Profile, verbose bool) (func(), error) {
-	// Receive TAP fd from child via SCM_RIGHTS
+	// Receive TUN fd from child via SCM_RIGHTS
 	conn, err := net.FileConn(parentSock)
 	if err != nil {
 		return nil, fmt.Errorf("FileConn: %w", err)
@@ -51,32 +51,32 @@ func setupNetworkProxy(parentSock *os.File, profile *Profile, verbose bool) (fun
 		return nil, fmt.Errorf("ParseUnixRights: %w", err)
 	}
 
-	tapFd := fds[0]
+	tunFd := fds[0]
 	// Set non-blocking so Go's runtime poller manages the fd.
 	// This lets Close() properly unblock a concurrent Read().
-	unix.SetNonblock(tapFd, true)
-	tapFile := os.NewFile(uintptr(tapFd), "tap0")
+	unix.SetNonblock(tunFd, true)
+	tunFile := os.NewFile(uintptr(tunFd), "tun0")
 
 	if verbose {
-		fmt.Fprintf(os.Stderr, "bnpm: received TAP fd %d from child\n", tapFd)
+		fmt.Fprintf(os.Stderr, "bnpm: received TUN fd %d from child\n", tunFd)
 	}
 
 	// Start the userspace network proxy
-	proxy, err := newNetProxy(tapFile, profile, verbose)
+	proxy, err := newNetProxy(tunFile, profile, verbose)
 	if err != nil {
-		tapFile.Close()
+		tunFile.Close()
 		return nil, fmt.Errorf("start proxy: %w", err)
 	}
 
 	cleanup := func() {
 		proxy.Close()
-		tapFile.Close()
+		tunFile.Close()
 	}
 
 	return cleanup, nil
 }
 
-// childSetupNetwork creates a TAP device in the child's network namespace,
+// childSetupNetwork creates a TUN device in the child's network namespace,
 // configures it, and sends the fd back to the parent.
 func childSetupNetwork(sockFd int) error {
 	// Bring up loopback
@@ -85,58 +85,57 @@ func childSetupNetwork(sockFd int) error {
 		netlink.LinkSetUp(lo)
 	}
 
-	// Create TAP device
-	tapFd, err := createTAP(tapName)
+	// Create TUN device
+	tunFd, err := createTUN(tunName)
 	if err != nil {
-		return fmt.Errorf("create TAP: %w", err)
+		return fmt.Errorf("create TUN: %w", err)
 	}
 
-	// Configure TAP device via netlink
-	tap, err := netlink.LinkByName(tapName)
+	// Configure TUN device via netlink
+	tun, err := netlink.LinkByName(tunName)
 	if err != nil {
-		unix.Close(tapFd)
-		return fmt.Errorf("find TAP link: %w", err)
+		unix.Close(tunFd)
+		return fmt.Errorf("find TUN link: %w", err)
 	}
 
-	if err := netlink.LinkSetMTU(tap, tapMTU); err != nil {
-		// Non-fatal
-		fmt.Fprintf(os.Stderr, "bnpm: warning: set TAP MTU: %v\n", err)
+	if err := netlink.LinkSetMTU(tun, tunMTU); err != nil {
+		fmt.Fprintf(os.Stderr, "bnpm: warning: set TUN MTU: %v\n", err)
 	}
 
-	addr, _ := netlink.ParseAddr(fmt.Sprintf("%s/%d", tapIP, tapMask))
-	if err := netlink.AddrAdd(tap, addr); err != nil {
-		unix.Close(tapFd)
-		return fmt.Errorf("add TAP addr: %w", err)
+	addr, _ := netlink.ParseAddr(fmt.Sprintf("%s/%d", tunIP, tunMask))
+	if err := netlink.AddrAdd(tun, addr); err != nil {
+		unix.Close(tunFd)
+		return fmt.Errorf("add TUN addr: %w", err)
 	}
 
-	if err := netlink.LinkSetUp(tap); err != nil {
-		unix.Close(tapFd)
-		return fmt.Errorf("TAP up: %w", err)
+	if err := netlink.LinkSetUp(tun); err != nil {
+		unix.Close(tunFd)
+		return fmt.Errorf("TUN up: %w", err)
 	}
 
-	gw := net.ParseIP(tapGateway)
+	gw := net.ParseIP(tunGateway)
 	route := &netlink.Route{Gw: gw}
 	if err := netlink.RouteAdd(route); err != nil {
-		unix.Close(tapFd)
+		unix.Close(tunFd)
 		return fmt.Errorf("add route: %w", err)
 	}
 
-	// Send TAP fd to parent via SCM_RIGHTS
-	rights := unix.UnixRights(tapFd)
-	err = unix.Sendmsg(sockFd, []byte("tap"), rights, nil, 0)
+	// Send TUN fd to parent via SCM_RIGHTS
+	rights := unix.UnixRights(tunFd)
+	err = unix.Sendmsg(sockFd, []byte("tun"), rights, nil, 0)
 	if err != nil {
-		unix.Close(tapFd)
-		return fmt.Errorf("sendmsg TAP fd: %w", err)
+		unix.Close(tunFd)
+		return fmt.Errorf("sendmsg TUN fd: %w", err)
 	}
 
-	// Close our copy of the TAP fd — parent has it now
-	unix.Close(tapFd)
+	// Close our copy — parent has it now
+	unix.Close(tunFd)
 
 	return nil
 }
 
-// createTAP creates a TAP device and returns its file descriptor.
-func createTAP(name string) (int, error) {
+// createTUN creates a TUN device and returns its file descriptor.
+func createTUN(name string) (int, error) {
 	fd, err := unix.Open("/dev/net/tun", unix.O_RDWR, 0)
 	if err != nil {
 		return -1, fmt.Errorf("open /dev/net/tun: %w", err)
@@ -145,8 +144,8 @@ func createTAP(name string) (int, error) {
 	// Build ifreq struct: IFNAMSIZ (16) bytes name + uint16 flags
 	var ifr [40]byte
 	copy(ifr[:unix.IFNAMSIZ], name)
-	// IFF_TAP=0x0002 | IFF_NO_PI=0x1000 = 0x1002
-	binary.NativeEndian.PutUint16(ifr[unix.IFNAMSIZ:], 0x0002|0x1000)
+	// IFF_TUN=0x0001 | IFF_NO_PI=0x1000 = 0x1001
+	binary.NativeEndian.PutUint16(ifr[unix.IFNAMSIZ:], 0x0001|0x1000)
 
 	_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), unix.TUNSETIFF, uintptr(unsafe.Pointer(&ifr[0])))
 	if errno != 0 {

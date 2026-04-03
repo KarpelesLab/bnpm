@@ -10,6 +10,6 @@ require (
 )
 
 require (
-	github.com/KarpelesLab/slirp v0.1.2
+	github.com/KarpelesLab/slirp v0.1.3
 	github.com/vishvananda/netns v0.0.5 // indirect
 )

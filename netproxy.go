@@ -13,45 +13,26 @@ import (
 	"golang.org/x/net/dns/dnsmessage"
 )
 
-// Ethernet/IP constants
 const (
-	etherLen  = 14
 	ipv4Len   = 20
 	udpHdrLen = 8
 
-	etherTypeARP  = 0x0806
-	etherTypeIPv4 = 0x0800
-	etherTypeIPv6 = 0x86DD
-
 	ipProtoTCP = 6
 	ipProtoUDP = 17
-
-	arpRequest = 1
-	arpReply   = 2
-)
-
-var (
-	gatewayMACAddr = [6]byte{0x02, 0x00, 0x0a, 0x00, 0x02, 0x01}
-	gatewayIPAddr  = net.IP{10, 0, 2, 1}
-	clientIPAddr   = net.IP{10, 0, 2, 100}
 )
 
 // netProxy manages the userspace network stack and connection proxying.
 type netProxy struct {
-	tapFile   *os.File
+	tunFile   *os.File
 	stack     *slirp.Stack
 	allowList *allowList
 	verbose   bool
-
-	clientMAC [6]byte
-	gotMAC    bool
-	mu        sync.Mutex
 
 	done chan struct{}
 	wg   sync.WaitGroup
 }
 
-func newNetProxy(tapFile *os.File, profile *Profile, verbose bool) (*netProxy, error) {
+func newNetProxy(tunFile *os.File, profile *Profile, verbose bool) (*netProxy, error) {
 	al := newAllowList(profile)
 	al.preResolve()
 
@@ -60,7 +41,7 @@ func newNetProxy(tapFile *os.File, profile *Profile, verbose bool) (*netProxy, e
 	}
 
 	np := &netProxy{
-		tapFile:   tapFile,
+		tunFile:   tunFile,
 		stack:     slirp.New(),
 		allowList: al,
 		verbose:   verbose,
@@ -75,20 +56,20 @@ func newNetProxy(tapFile *os.File, profile *Profile, verbose bool) (*netProxy, e
 
 func (np *netProxy) Close() {
 	close(np.done)
-	np.tapFile.Close()
+	np.tunFile.Close()
 	np.stack.Close()
 	np.wg.Wait()
 }
 
-// writer returns a slirp.Writer that sends Ethernet frames to the TAP device.
+// writer returns a slirp.Writer that sends IP packets to the TUN device.
 func (np *netProxy) writer() slirp.Writer {
-	return func(frame []byte) error {
-		_, err := np.tapFile.Write(frame)
+	return func(pkt []byte) error {
+		_, err := np.tunFile.Write(pkt)
 		return err
 	}
 }
 
-// readLoop reads frames from the TAP device and dispatches them.
+// readLoop reads IP packets from the TUN device and dispatches them.
 func (np *netProxy) readLoop() {
 	defer np.wg.Done()
 	buf := make([]byte, 65536)
@@ -101,51 +82,34 @@ func (np *netProxy) readLoop() {
 		default:
 		}
 
-		n, err := np.tapFile.Read(buf)
+		n, err := np.tunFile.Read(buf)
 		if err != nil {
 			select {
 			case <-np.done:
 				return
 			default:
 				if np.verbose {
-					fmt.Fprintf(os.Stderr, "bnpm: TAP read error: %v\n", err)
+					fmt.Fprintf(os.Stderr, "bnpm: TUN read error: %v\n", err)
 				}
 				return
 			}
 		}
-		if n < etherLen {
+		if n < ipv4Len {
 			continue
 		}
 
-		frame := buf[:n]
+		ipPkt := make([]byte, n)
+		copy(ipPkt, buf[:n])
 
-		// Learn client MAC
-		np.mu.Lock()
-		if !np.gotMAC {
-			copy(np.clientMAC[:], frame[6:12])
-			np.gotMAC = true
-		}
-		clientMAC := np.clientMAC
-		np.mu.Unlock()
-
-		etherType := binary.BigEndian.Uint16(frame[12:14])
-
-		switch etherType {
-		case etherTypeARP:
-			np.handleARP(frame)
-
-		case etherTypeIPv4, etherTypeIPv6:
-			ipPkt := frame[etherLen:]
-			if np.filterPacket(ipPkt) {
-				np.stack.HandlePacket(0, clientMAC, gatewayMACAddr, ipPkt, w)
-			}
+		if np.filterPacket(ipPkt) {
+			np.stack.HandlePacket(0, ipPkt, w)
 		}
 	}
 }
 
 // filterPacket checks if an IP packet should be allowed through.
 // Returns true if allowed, false if blocked.
-// Also intercepts DNS queries (UDP port 53) for domain filtering.
+// Intercepts DNS queries (UDP port 53) for domain filtering.
 func (np *netProxy) filterPacket(ipPkt []byte) bool {
 	if len(ipPkt) < ipv4Len {
 		return false
@@ -153,7 +117,6 @@ func (np *netProxy) filterPacket(ipPkt []byte) bool {
 
 	version := ipPkt[0] >> 4
 	if version != 4 {
-		// Allow IPv6 through for now (could add filtering later)
 		return true
 	}
 
@@ -178,7 +141,6 @@ func (np *netProxy) filterPacket(ipPkt []byte) bool {
 
 		// Only filter on SYN (new connections); allow data on established
 		if flags&0x02 != 0 && flags&0x10 == 0 {
-			// SYN without ACK = new connection
 			if !np.allowList.isAllowed(dstAddr, dstPort) {
 				if np.verbose {
 					fmt.Fprintf(os.Stderr, "bnpm: BLOCKED tcp %s:%d\n", dstAddr, dstPort)
@@ -200,12 +162,10 @@ func (np *netProxy) filterPacket(ipPkt []byte) bool {
 		dstPort := binary.BigEndian.Uint16(udp[2:4])
 
 		if dstPort == 53 {
-			// Intercept DNS — handle ourselves, don't pass to slirp
 			np.handleDNS(ipPkt[:ihl], udp)
 			return false
 		}
 
-		// Non-DNS UDP: check allow list
 		if !np.allowList.isAllowed(dstAddr, dstPort) {
 			if np.verbose {
 				fmt.Fprintf(os.Stderr, "bnpm: BLOCKED udp %s:%d\n", dstAddr, dstPort)
@@ -215,86 +175,39 @@ func (np *netProxy) filterPacket(ipPkt []byte) bool {
 		return true
 
 	default:
-		// ICMP etc — drop (slirp doesn't handle ICMPv4 anyway)
 		return false
 	}
 }
 
-// handleARP responds to ARP requests for the gateway IP.
-func (np *netProxy) handleARP(frame []byte) {
-	if len(frame) < etherLen+28 {
-		return
-	}
-	arpData := frame[etherLen:]
-	opcode := binary.BigEndian.Uint16(arpData[6:8])
-	if opcode != arpRequest {
-		return
-	}
-
-	targetIP := arpData[24:28]
-	if !net.IP(targetIP).Equal(gatewayIPAddr) {
-		return
-	}
-
-	reply := make([]byte, etherLen+28)
-	copy(reply[0:6], frame[6:12])              // dst = original sender
-	copy(reply[6:12], gatewayMACAddr[:])        // src = gateway
-	binary.BigEndian.PutUint16(reply[12:14], etherTypeARP)
-
-	arp := reply[etherLen:]
-	binary.BigEndian.PutUint16(arp[0:2], 1)    // hardware: Ethernet
-	binary.BigEndian.PutUint16(arp[2:4], 0x800) // protocol: IPv4
-	arp[4] = 6                                   // hw size
-	arp[5] = 4                                   // proto size
-	binary.BigEndian.PutUint16(arp[6:8], arpReply)
-	copy(arp[8:14], gatewayMACAddr[:])  // sender MAC
-	copy(arp[14:18], gatewayIPAddr)     // sender IP
-	copy(arp[18:24], arpData[8:14])     // target MAC (original sender's MAC)
-	copy(arp[24:28], arpData[14:18])    // target IP (original sender's IP)
-
-	np.tapFile.Write(reply)
-}
-
-// sendTCPReset sends a RST packet back through the TAP for a denied TCP SYN.
+// sendTCPReset sends a RST packet back through the TUN for a denied TCP SYN.
 func (np *netProxy) sendTCPReset(ipHdr, tcpHdr []byte) {
 	srcPort := binary.BigEndian.Uint16(tcpHdr[0:2])
 	dstPort := binary.BigEndian.Uint16(tcpHdr[2:4])
 	clientSeq := binary.BigEndian.Uint32(tcpHdr[4:8])
 
-	np.mu.Lock()
-	clientMAC := np.clientMAC
-	np.mu.Unlock()
-
-	// Build RST+ACK: Ethernet(14) + IP(20) + TCP(20)
-	pkt := make([]byte, etherLen+20+20)
-
-	// Ethernet header
-	copy(pkt[0:6], clientMAC[:])
-	copy(pkt[6:12], gatewayMACAddr[:])
-	binary.BigEndian.PutUint16(pkt[12:14], etherTypeIPv4)
+	// Build RST+ACK: IP(20) + TCP(20)
+	pkt := make([]byte, 40)
 
 	// IP header (swap src/dst from original)
-	ip := pkt[etherLen:]
+	ip := pkt
 	ip[0] = 0x45
-	binary.BigEndian.PutUint16(ip[2:4], 40) // total length
-	ip[8] = 64                                // TTL
+	binary.BigEndian.PutUint16(ip[2:4], 40)
+	ip[8] = 64
 	ip[9] = ipProtoTCP
-	copy(ip[12:16], ipHdr[16:20]) // src = original dst (remote)
-	copy(ip[16:20], ipHdr[12:16]) // dst = original src (client)
+	copy(ip[12:16], ipHdr[16:20]) // src = original dst
+	copy(ip[16:20], ipHdr[12:16]) // dst = original src
 	binary.BigEndian.PutUint16(ip[10:12], slirp.IPChecksum(ip[:20]))
 
 	// TCP header (swap ports)
 	tcp := ip[20:]
-	binary.BigEndian.PutUint16(tcp[0:2], dstPort)  // src = original dst
-	binary.BigEndian.PutUint16(tcp[2:4], srcPort)   // dst = original src
-	binary.BigEndian.PutUint32(tcp[4:8], 0)          // seq
+	binary.BigEndian.PutUint16(tcp[0:2], dstPort)
+	binary.BigEndian.PutUint16(tcp[2:4], srcPort)
 	binary.BigEndian.PutUint32(tcp[8:12], clientSeq+1) // ack
-	tcp[12] = 0x50                                    // data offset = 5 words
-	tcp[13] = 0x14                                    // RST+ACK
-	binary.BigEndian.PutUint16(tcp[14:16], 0)         // window
+	tcp[12] = 0x50                                      // data offset = 5 words
+	tcp[13] = 0x14                                      // RST+ACK
 	binary.BigEndian.PutUint16(tcp[16:18], slirp.TCPChecksum(ip[12:16], ip[16:20], tcp[:20], nil))
 
-	np.tapFile.Write(pkt)
+	np.tunFile.Write(pkt)
 }
 
 // handleDNS processes DNS queries, filters by domain, and responds.
@@ -309,7 +222,6 @@ func (np *netProxy) handleDNS(ipHdr, udpPkt []byte) {
 		return
 	}
 
-	// Parse DNS query
 	var parser dnsmessage.Parser
 	hdr, err := parser.Start(payload)
 	if err != nil {
@@ -342,7 +254,6 @@ func (np *netProxy) handleDNS(ipHdr, udpPkt []byte) {
 		return
 	}
 
-	// Add resolved IPs to dynamic allow list
 	for _, ip := range resolvedIPs {
 		if addr, ok := netip.AddrFromSlice(ip); ok {
 			np.allowList.mu.Lock()
@@ -354,36 +265,23 @@ func (np *netProxy) handleDNS(ipHdr, udpPkt []byte) {
 	np.sendUDPResponse(ipHdr, srcPort, 53, resp)
 }
 
-// sendUDPResponse sends a UDP response back through the TAP.
+// sendUDPResponse sends a UDP response back through the TUN.
 func (np *netProxy) sendUDPResponse(origIPHdr []byte, clientPort, serverPort uint16, payload []byte) {
-	np.mu.Lock()
-	clientMAC := np.clientMAC
-	np.mu.Unlock()
-
-	var srcIP, dstIP [4]byte
-	copy(srcIP[:], origIPHdr[16:20]) // original dst = our src
-	copy(dstIP[:], origIPHdr[12:16]) // original src = our dst
-
 	ipHdrLen := 20
-	totalLen := etherLen + ipHdrLen + udpHdrLen + len(payload)
+	totalLen := ipHdrLen + udpHdrLen + len(payload)
 	pkt := make([]byte, totalLen)
 
-	// Ethernet
-	copy(pkt[0:6], clientMAC[:])
-	copy(pkt[6:12], gatewayMACAddr[:])
-	binary.BigEndian.PutUint16(pkt[12:14], etherTypeIPv4)
-
-	// IP
-	ip := pkt[etherLen:]
+	// IP header
+	ip := pkt
 	ip[0] = 0x45
-	binary.BigEndian.PutUint16(ip[2:4], uint16(ipHdrLen+udpHdrLen+len(payload)))
+	binary.BigEndian.PutUint16(ip[2:4], uint16(totalLen))
 	ip[8] = 64
 	ip[9] = ipProtoUDP
-	copy(ip[12:16], srcIP[:])
-	copy(ip[16:20], dstIP[:])
+	copy(ip[12:16], origIPHdr[16:20]) // src = original dst
+	copy(ip[16:20], origIPHdr[12:16]) // dst = original src
 	binary.BigEndian.PutUint16(ip[10:12], slirp.IPChecksum(ip[:ipHdrLen]))
 
-	// UDP
+	// UDP header
 	udp := ip[ipHdrLen:]
 	binary.BigEndian.PutUint16(udp[0:2], serverPort)
 	binary.BigEndian.PutUint16(udp[2:4], clientPort)
@@ -391,7 +289,7 @@ func (np *netProxy) sendUDPResponse(origIPHdr []byte, clientPort, serverPort uin
 	copy(udp[udpHdrLen:], payload)
 	binary.BigEndian.PutUint16(udp[6:8], slirp.UDPChecksum(ip[12:16], ip[16:20], udp[:udpHdrLen], payload))
 
-	np.tapFile.Write(pkt)
+	np.tunFile.Write(pkt)
 }
 
 // forwardDNS sends a DNS query to the host resolver and returns the response
