@@ -35,8 +35,6 @@ target = "~/.npm-global"
 mode = "ro"
 optional = true
 
-[profile.resources]
-max_memory = "16G"
 
 [profile.env]
 pass = ["HOME", "USER", "PATH", "TERM", "NODE_ENV", "NPM_CONFIG_REGISTRY", "LANG"]
@@ -65,8 +63,6 @@ target = "~/.npm-global"
 mode = "ro"
 optional = true
 
-[profile.resources]
-max_memory = "16G"
 
 [profile.env]
 pass = ["HOME", "USER", "PATH", "TERM", "NODE_ENV", "CI", "LANG"]
@@ -88,8 +84,6 @@ allowed_domains = [
 ]
 allowed_ports = [80, 443]
 
-[profile.resources]
-max_memory = "16G"
 
 [[profile.filesystem.bind]]
 source = "~/.cache/yarn"
@@ -119,8 +113,6 @@ args = ["^run$", "^test$", "^start$", "^build$"]
 [profile.network]
 mode = "none"
 
-[profile.resources]
-max_memory = "16G"
 
 [[profile.filesystem.bind]]
 source = "~/.npm-global"
@@ -144,8 +136,6 @@ allowed_domains = [
 ]
 allowed_ports = [80, 443]
 
-[profile.resources]
-max_memory = "16G"
 
 [[profile.filesystem.bind]]
 source = "~/.local/share/pnpm"
@@ -175,8 +165,6 @@ args = ["^run$", "^test$", "^start$", "^build$", "^exec$"]
 [profile.network]
 mode = "none"
 
-[profile.resources]
-max_memory = "16G"
 
 [[profile.filesystem.bind]]
 source = "~/.local/share/pnpm/store"
