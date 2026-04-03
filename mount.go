@@ -242,6 +242,23 @@ func setupEtc(rootfs string, profile *Profile, homeDir, username string) error {
 		unix.Mount("", dst, "", unix.MS_BIND|unix.MS_REMOUNT|unix.MS_RDONLY|unix.MS_REC, "")
 	}
 
+	// Dynamic linker cache — required for finding libraries in non-standard paths
+	for _, f := range []string{"/etc/ld.so.cache", "/etc/ld.so.conf"} {
+		if pathExists(f) {
+			dst := filepath.Join(rootfs, f)
+			touchFile(dst)
+			unix.Mount(f, dst, "", unix.MS_BIND, "")
+			unix.Mount("", dst, "", unix.MS_BIND|unix.MS_REMOUNT|unix.MS_RDONLY, "")
+		}
+	}
+	// Also mount ld.so.conf.d if it exists
+	if isDir("/etc/ld.so.conf.d") {
+		dst := filepath.Join(rootfs, "etc/ld.so.conf.d")
+		os.MkdirAll(dst, 0755)
+		unix.Mount("/etc/ld.so.conf.d", dst, "", unix.MS_BIND|unix.MS_REC, "")
+		unix.Mount("", dst, "", unix.MS_BIND|unix.MS_REMOUNT|unix.MS_RDONLY|unix.MS_REC, "")
+	}
+
 	// /etc/localtime
 	if pathExists("/etc/localtime") {
 		dst := filepath.Join(etcDir, "localtime")
