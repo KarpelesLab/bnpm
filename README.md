@@ -1,5 +1,8 @@
 # bnpm - Bubble NPM
 
+[![CI](https://github.com/KarpelesLab/bnpm/actions/workflows/ci.yml/badge.svg)](https://github.com/KarpelesLab/bnpm/actions/workflows/ci.yml)
+[![Coverage Status](https://coveralls.io/repos/github/KarpelesLab/bnpm/badge.svg?branch=master)](https://coveralls.io/github/KarpelesLab/bnpm?branch=master)
+
 A CLI tool that sandboxes package manager commands inside Linux namespaces. It restricts filesystem access to only the project directory and required system paths, and restricts network access to only allowed registries — or no network at all for build commands.
 
 Designed to mitigate build-time supply chain attacks by preventing malicious install scripts from exfiltrating data or accessing files outside the project.
