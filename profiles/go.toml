@@ -31,7 +31,7 @@ mode = "rw"
 create = true
 
 [profile.resources]
-max_memory = "4G"
+max_memory = "16G"
 
 [profile.env]
 pass = ["HOME", "USER", "PATH", "TERM", "GOPATH", "GOMODCACHE", "GOPROXY", "GONOSUMCHECK", "GOFLAGS", "LANG"]
@@ -58,7 +58,7 @@ mode = "rw"
 create = true
 
 [profile.resources]
-max_memory = "8G"
+max_memory = "16G"
 
 [profile.env]
 pass = ["HOME", "USER", "PATH", "TERM", "GOPATH", "GOMODCACHE", "GOPROXY", "GOFLAGS", "CGO_ENABLED", "CC", "CXX", "LANG"]
