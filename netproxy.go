@@ -265,19 +265,35 @@ func (np *netProxy) sendTCPReset(ipHdr, tcpHdr []byte) {
 	clientMAC := np.clientMAC
 	np.mu.Unlock()
 
-	// Build RST+ACK packet: swap src/dst
-	var srcIP, dstIP [4]byte
-	copy(srcIP[:], ipHdr[12:16]) // original src (client)
-	copy(dstIP[:], ipHdr[16:20]) // original dst (remote)
+	// Build RST+ACK: Ethernet(14) + IP(20) + TCP(20)
+	pkt := make([]byte, etherLen+20+20)
 
-	pkt := slirp.BuildTCPPacket(
-		gatewayMACAddr, clientMAC,
-		dstIP, srcIP, // swap: remote→client
-		dstPort, srcPort,
-		0, clientSeq+1,
-		0x04|0x10, // RST+ACK
-		nil,
-	)
+	// Ethernet header
+	copy(pkt[0:6], clientMAC[:])
+	copy(pkt[6:12], gatewayMACAddr[:])
+	binary.BigEndian.PutUint16(pkt[12:14], etherTypeIPv4)
+
+	// IP header (swap src/dst from original)
+	ip := pkt[etherLen:]
+	ip[0] = 0x45
+	binary.BigEndian.PutUint16(ip[2:4], 40) // total length
+	ip[8] = 64                                // TTL
+	ip[9] = ipProtoTCP
+	copy(ip[12:16], ipHdr[16:20]) // src = original dst (remote)
+	copy(ip[16:20], ipHdr[12:16]) // dst = original src (client)
+	binary.BigEndian.PutUint16(ip[10:12], slirp.IPChecksum(ip[:20]))
+
+	// TCP header (swap ports)
+	tcp := ip[20:]
+	binary.BigEndian.PutUint16(tcp[0:2], dstPort)  // src = original dst
+	binary.BigEndian.PutUint16(tcp[2:4], srcPort)   // dst = original src
+	binary.BigEndian.PutUint32(tcp[4:8], 0)          // seq
+	binary.BigEndian.PutUint32(tcp[8:12], clientSeq+1) // ack
+	tcp[12] = 0x50                                    // data offset = 5 words
+	tcp[13] = 0x14                                    // RST+ACK
+	binary.BigEndian.PutUint16(tcp[14:16], 0)         // window
+	binary.BigEndian.PutUint16(tcp[16:18], slirp.TCPChecksum(ip[12:16], ip[16:20], tcp[:20], nil))
+
 	np.tapFile.Write(pkt)
 }
 
