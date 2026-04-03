@@ -29,6 +29,12 @@ target = "~/.npmrc"
 mode = "ro"
 optional = true
 
+[[profile.filesystem.bind]]
+source = "~/.npm-global"
+target = "~/.npm-global"
+mode = "ro"
+optional = true
+
 [profile.resources]
 max_memory = "4G"
 
@@ -52,6 +58,12 @@ mode = "none"
 source = "~/.npm"
 target = "~/.npm"
 mode = "ro"
+
+[[profile.filesystem.bind]]
+source = "~/.npm-global"
+target = "~/.npm-global"
+mode = "ro"
+optional = true
 
 [profile.resources]
 max_memory = "8G"
@@ -91,6 +103,12 @@ target = "~/.yarnrc"
 mode = "ro"
 optional = true
 
+[[profile.filesystem.bind]]
+source = "~/.npm-global"
+target = "~/.npm-global"
+mode = "ro"
+optional = true
+
 [[profile]]
 name = "yarn-scripts"
 
@@ -103,6 +121,12 @@ mode = "none"
 
 [profile.resources]
 max_memory = "8G"
+
+[[profile.filesystem.bind]]
+source = "~/.npm-global"
+target = "~/.npm-global"
+mode = "ro"
+optional = true
 
 [[profile]]
 name = "pnpm-install"
@@ -135,6 +159,12 @@ target = "~/.local/share/pnpm/store"
 mode = "rw"
 create = true
 
+[[profile.filesystem.bind]]
+source = "~/.npm-global"
+target = "~/.npm-global"
+mode = "ro"
+optional = true
+
 [[profile]]
 name = "pnpm-scripts"
 
@@ -152,3 +182,9 @@ max_memory = "8G"
 source = "~/.local/share/pnpm/store"
 target = "~/.local/share/pnpm/store"
 mode = "ro"
+
+[[profile.filesystem.bind]]
+source = "~/.npm-global"
+target = "~/.npm-global"
+mode = "ro"
+optional = true
