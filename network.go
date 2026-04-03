@@ -52,6 +52,9 @@ func setupNetworkProxy(parentSock *os.File, profile *Profile, verbose bool) (fun
 	}
 
 	tapFd := fds[0]
+	// Set non-blocking so Go's runtime poller manages the fd.
+	// This lets Close() properly unblock a concurrent Read().
+	unix.SetNonblock(tapFd, true)
 	tapFile := os.NewFile(uintptr(tapFd), "tap0")
 
 	if verbose {
