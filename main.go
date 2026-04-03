@@ -24,8 +24,7 @@ func main() {
 	var (
 		flagProfile   string
 		flagNetwork   string
-		flagMaxMemory string
-		flagVerbose   bool
+		flagVerbose bool
 		flagDryRun    bool
 		flagList      bool
 		flagVersion   bool
@@ -33,7 +32,6 @@ func main() {
 
 	flag.StringVar(&flagProfile, "profile", "", "force a specific profile")
 	flag.StringVar(&flagNetwork, "network", "", "override network mode: none, filtered, host")
-	flag.StringVar(&flagMaxMemory, "max-memory", "", "override max memory limit (e.g. 4G, 512M)")
 	flag.BoolVar(&flagVerbose, "verbose", false, "print sandbox setup details")
 	flag.BoolVar(&flagDryRun, "dry-run", false, "show what would be done without executing")
 	flag.BoolVar(&flagList, "list-profiles", false, "list available profiles")
@@ -113,11 +111,6 @@ func main() {
 		profile.Network.Mode = flagNetwork
 	}
 
-	// Memory limit override
-	if flagMaxMemory != "" {
-		profile.Resources.MaxMemory = flagMaxMemory
-	}
-
 	// Get project directory
 	projectDir, err := os.Getwd()
 	if err != nil {
@@ -134,9 +127,6 @@ func main() {
 			for _, b := range profile.Filesystem.Binds {
 				fmt.Fprintf(os.Stderr, "  %s -> %s (%s)\n", expandPath(b.Source), expandPath(b.Target), b.Mode)
 			}
-		}
-		if profile.Resources.MaxMemory != "" {
-			fmt.Fprintf(os.Stderr, "bnpm: max memory: %s\n", profile.Resources.MaxMemory)
 		}
 		if profile.Network.Mode == "filtered" {
 			fmt.Fprintf(os.Stderr, "bnpm: allowed domains: %v\n", profile.Network.AllowedDomains)

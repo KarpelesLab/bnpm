@@ -4,39 +4,6 @@ import (
 	"testing"
 )
 
-func TestParseSize(t *testing.T) {
-	tests := []struct {
-		input string
-		want  uint64
-		err   bool
-	}{
-		{"1K", 1024, false},
-		{"1k", 1024, false},
-		{"512M", 512 * 1024 * 1024, false},
-		{"4G", 4 * 1024 * 1024 * 1024, false},
-		{"1T", 1024 * 1024 * 1024 * 1024, false},
-		{"100", 100, false},
-		{"", 0, true},
-		{"abc", 0, true},
-	}
-	for _, tt := range tests {
-		got, err := parseSize(tt.input)
-		if tt.err {
-			if err == nil {
-				t.Errorf("parseSize(%q) expected error, got %d", tt.input, got)
-			}
-			continue
-		}
-		if err != nil {
-			t.Errorf("parseSize(%q) unexpected error: %v", tt.input, err)
-			continue
-		}
-		if got != tt.want {
-			t.Errorf("parseSize(%q) = %d, want %d", tt.input, got, tt.want)
-		}
-	}
-}
-
 func TestMatchProfile(t *testing.T) {
 	profiles := []Profile{
 		{

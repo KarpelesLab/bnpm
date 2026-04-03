@@ -19,12 +19,6 @@ type Profile struct {
 	Network    NetworkConfig    `toml:"network"`
 	Filesystem FilesystemConfig `toml:"filesystem"`
 	Env        EnvConfig        `toml:"env"`
-	Resources  ResourceConfig   `toml:"resources"`
-}
-
-// ResourceConfig defines resource limits for the sandbox.
-type ResourceConfig struct {
-	MaxMemory string `toml:"max_memory"` // e.g. "4G", "512M", "1G" — limits virtual address space
 }
 
 // MatchRule defines how to match a command invocation to a profile.
