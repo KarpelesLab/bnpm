@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 )
@@ -79,20 +81,49 @@ func runChild() {
 		fatal("chdir to project dir: %v", err)
 	}
 
-	// Build filtered environment
-	env := buildEnv(&cp.Profile)
-
 	// Resolve target binary
 	binary, err := resolveInSandbox(cp.Command)
 	if err != nil {
 		fatal("command not found in sandbox: %s", cp.Command)
 	}
 
-	// Replace this process with the target command
-	args := append([]string{filepath.Base(cp.Command)}, cp.Args...)
-	if err := unix.Exec(binary, args, env); err != nil {
-		fatal("exec %s: %v", binary, err)
+	// Run the target as a subprocess (not exec) so we remain PID 1 and can
+	// forward signals. PID 1 in a PID namespace has special semantics: the
+	// kernel silently drops signals from outside the namespace unless PID 1
+	// has installed a handler.
+	env := buildEnv(&cp.Profile)
+	cmd := exec.Command(binary, cp.Args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = env
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Pdeathsig: syscall.SIGKILL,
 	}
+
+	if err := cmd.Start(); err != nil {
+		fatal("start %s: %v", filepath.Base(cp.Command), err)
+	}
+
+	// Forward signals to the child process
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	go func() {
+		for sig := range sigCh {
+			cmd.Process.Signal(sig)
+		}
+	}()
+
+	err = cmd.Wait()
+	signal.Stop(sigCh)
+
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			os.Exit(exitErr.ExitCode())
+		}
+		os.Exit(1)
+	}
+	os.Exit(0)
 }
 
 // resolveInSandbox finds a binary in the sandbox's PATH.
