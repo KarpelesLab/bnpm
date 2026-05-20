@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/netip"
 	"testing"
 )
 
@@ -157,5 +158,44 @@ func TestAllowListIsAllowed(t *testing.T) {
 	}
 	if !al.isPortAllowed(443) {
 		t.Error("port 443 should be allowed")
+	}
+}
+
+func TestAllowListIPAndPrefix(t *testing.T) {
+	profile := &Profile{
+		Network: NetworkConfig{
+			AllowedIPs: []string{
+				"1.2.3.4",      // bare v4
+				"10.0.0.0/8",   // v4 CIDR
+				"2001:db8::/32", // v6 CIDR
+				"::1",           // bare v6
+			},
+		},
+	}
+	al := newAllowList(profile)
+
+	tests := []struct {
+		ip   string
+		want bool
+	}{
+		{"1.2.3.4", true},
+		{"1.2.3.5", false},
+		{"10.0.0.0", true},
+		{"10.0.0.1", true},     // regression: prefix containment, not just base address
+		{"10.255.255.255", true},
+		{"11.0.0.1", false},
+		{"2001:db8::1", true},
+		{"2001:db9::1", false},
+		{"::1", true},
+		{"::2", false},
+	}
+	for _, tt := range tests {
+		ip, err := netip.ParseAddr(tt.ip)
+		if err != nil {
+			t.Fatalf("bad test ip %q: %v", tt.ip, err)
+		}
+		if got := al.isIPAllowed(ip); got != tt.want {
+			t.Errorf("isIPAllowed(%q) = %v, want %v", tt.ip, got, tt.want)
+		}
 	}
 }

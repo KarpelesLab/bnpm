@@ -12,30 +12,32 @@ import (
 
 // allowList tracks which IPs and domains are allowed.
 type allowList struct {
-	mu             sync.RWMutex
-	domains        []string // exact domains and wildcard patterns (*.example.com)
-	allowedIPs     map[netip.Addr]bool
-	allowedPorts   map[uint16]bool
-	resolvedIPs    map[netip.Addr]bool // dynamically resolved IPs
+	mu              sync.RWMutex
+	domains         []string // exact domains and wildcard patterns (*.example.com)
+	allowedIPs      map[netip.Addr]bool
+	allowedPrefixes []netip.Prefix // CIDR ranges from AllowedIPs
+	allowedPorts    map[uint16]bool
+	resolvedIPs     map[netip.Addr]bool // dynamically resolved IPs
 }
 
 func newAllowList(profile *Profile) *allowList {
 	al := &allowList{
-		allowedIPs:  make(map[netip.Addr]bool),
+		allowedIPs:   make(map[netip.Addr]bool),
 		allowedPorts: make(map[uint16]bool),
-		resolvedIPs: make(map[netip.Addr]bool),
+		resolvedIPs:  make(map[netip.Addr]bool),
 	}
 
 	al.domains = profile.Network.AllowedDomains
 
 	for _, ipStr := range profile.Network.AllowedIPs {
+		// Bare address takes precedence; only fall through to prefix parsing
+		// if it isn't a valid address on its own.
 		if ip, err := netip.ParseAddr(ipStr); err == nil {
-			al.allowedIPs[ip] = true
+			al.allowedIPs[ip.Unmap()] = true
+			continue
 		}
-		// Also try parsing as prefix
 		if pfx, err := netip.ParsePrefix(ipStr); err == nil {
-			// Store the prefix start — we'll check containment in isIPAllowed
-			al.allowedIPs[pfx.Addr()] = true
+			al.allowedPrefixes = append(al.allowedPrefixes, pfx.Masked())
 		}
 	}
 
@@ -110,27 +112,22 @@ func (al *allowList) isDomainAllowed(domain string) bool {
 	return false
 }
 
-// isIPAllowed checks if an IP is in the allow list (static or dynamically resolved).
+// isIPAllowed checks if an IP is in the allow list (static, dynamically
+// resolved, or contained in a configured CIDR range).
 func (al *allowList) isIPAllowed(ip netip.Addr) bool {
 	ip = ip.Unmap()
 
 	al.mu.RLock()
 	defer al.mu.RUnlock()
 
-	if al.allowedIPs[ip] {
+	if al.allowedIPs[ip] || al.resolvedIPs[ip] {
 		return true
 	}
-	if al.resolvedIPs[ip] {
-		return true
-	}
-
-	// Check prefixes in allowedIPs
-	for allowedIP := range al.allowedIPs {
-		if allowedIP == ip {
+	for _, pfx := range al.allowedPrefixes {
+		if pfx.Contains(ip) {
 			return true
 		}
 	}
-
 	return false
 }
 
@@ -152,6 +149,6 @@ func (al *allowList) String() string {
 	al.mu.RLock()
 	defer al.mu.RUnlock()
 
-	return fmt.Sprintf("domains=%v staticIPs=%d resolvedIPs=%d ports=%v",
-		al.domains, len(al.allowedIPs), len(al.resolvedIPs), al.allowedPorts)
+	return fmt.Sprintf("domains=%v staticIPs=%d prefixes=%d resolvedIPs=%d ports=%v",
+		al.domains, len(al.allowedIPs), len(al.allowedPrefixes), len(al.resolvedIPs), al.allowedPorts)
 }

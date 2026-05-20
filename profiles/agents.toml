@@ -83,6 +83,64 @@ pass = [
     "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME",
 ]
 
+# Claude Code — hardened (opt-in via `--profile claude-hardened`).
+#
+# Removes attack surface from `claude-full`:
+#   - no ~/.ssh bind mount, no SSH_AUTH_SOCK passthrough — a compromised tool
+#     run by claude can no longer read your private keys or sign with the agent
+#   - ~/.config is NOT mounted — prevents a compromised run from writing
+#     ~/.config/bnpm/config.toml to broaden the sandbox on the next invocation
+#     (user profiles match before built-ins), and keeps gh/aws/op/etc. creds
+#     stored under ~/.config out of reach
+#   - drops *.sentry.io, *.googleapis.com, *.google.com, statsig.com and
+#     marketplace/CDN wildcards that double as data-exfil channels over TLS
+#   - ~/.npm-global / ~/.npm not mounted (no install-time tampering of caches
+#     a later `npm` run outside the sandbox would consume)
+#
+# Trade-offs: no git push over SSH, no VS Code marketplace, no web-search via
+# *.google.com tools. Use `claude-full` when you actively need those.
+[[profile]]
+name = "claude-hardened"
+
+[profile.network]
+mode = "filtered"
+allowed_domains = [
+    # Claude API
+    "api.anthropic.com",
+    "statsig.anthropic.com",
+    # npm registry (self-updates, MCP packages) — kept narrow, no wildcards
+    "registry.npmjs.org",
+    # GitHub: API + git smart-http + release/tarball downloads
+    "github.com",
+    "api.github.com",
+    "codeload.github.com",
+    "raw.githubusercontent.com",
+    "objects.githubusercontent.com",
+]
+allowed_ports = [443]
+
+[[profile.filesystem.bind]]
+source = "~/.claude"
+target = "~/.claude"
+mode = "rw"
+create = true
+
+[[profile.filesystem.bind]]
+source = "~/.gitconfig"
+target = "~/.gitconfig"
+mode = "ro"
+optional = true
+
+[profile.env]
+pass = [
+    "HOME", "USER", "PATH", "TERM", "LANG", "SHELL",
+    "ANTHROPIC_API_KEY", "CLAUDE_CODE_API_KEY",
+    "EDITOR", "VISUAL",
+    "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
+    "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL",
+    "NO_COLOR", "FORCE_COLOR",
+]
+
 # Claude Code — API only (no git, no npm, no web search)
 [[profile]]
 name = "claude-api-only"
